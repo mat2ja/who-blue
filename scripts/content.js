@@ -1,57 +1,136 @@
-const wait = (amount = 0) => new Promise(resolve => setTimeout(resolve, amount));
+const getCheckmark = () =>
+  document.querySelector(`[aria-label*="verified accounts"]`);
 
 async function isBlue() {
-  const checkmark = document.querySelector(`[aria-label*="verified accounts"]`);
+  const checkmark = getCheckmark();
 
   if (!checkmark) return false;
 
-  // click it
   checkmark.click();
-  // wait for a bit
-  await wait(50);
-  const blueText = Array.from(document.querySelectorAll('span')).find(span => span.innerText.includes('subscribed to Twitter Blue'));
+
+  const hoverCard = await waitForHoverCard();
+  const blueText = Array.from(hoverCard.querySelectorAll('span')).find((span) =>
+    span.innerText.includes('subscribed to Twitter Blue')
+  );
 
   checkmark.click();
 
-  if (blueText) return true;
-  return false;
+  return !!blueText;
 }
 
 function markAsBlue() {
-  const check = document.querySelector(`[aria-label*="verified accounts"] svg`);
-  const otherCheck = document.querySelector(`svg[aria-label="Verified account"]`)
+  const profileCheck = getCheckmark().querySelector('svg');
+  const headerCheck = document.querySelector(
+    `svg[aria-label="Verified account"]`
+  );
 
-  if (!check) return;
-  [check, otherCheck].filter(check => check.style).forEach(check => {
-    check.style.rotate = `0.5turn`;
-    check.style.fill = `#ee8383`;
-  });
+  const checks = [profileCheck, headerCheck];
+
+  if (!checks.length) return;
+
+  checks
+    .filter((check) => check.style)
+    .forEach((check) => {
+      check.style.rotate = `0.5turn`;
+      check.style.fill = `#ee8383`;
+    });
 }
 
 async function go() {
-  await waitForTimeline();
-  console.log('checking if blue')
-  await wait(500);
-  const isBlueCheck = await isBlue();
-  if (isBlueCheck) {
-    console.log('IS BLUE')
-    markAsBlue();
+  try {
+    await waitForTimeline();
+    await waitForCheckmark();
+
+    const isBlueCheck = await isBlue();
+
+    if (isBlueCheck) {
+      console.log('🔵 IS BLUE');
+      markAsBlue();
+    } else {
+      console.log('NOT BLUE and NOT VERIFIED');
+    }
+  } catch (err) {
+    console.log('❌ Checkmark not found');
   }
 }
 
 async function waitForTimeline() {
-  return new Promise((resolve, reject) => {
-    const interval = setInterval(function() {
-      console.log('checking for timeline...');
+  let count = 0;
+  return new Promise((resolve) => {
+    const interval = setInterval(() => {
+      if (++count > 1000) {
+        clearInterval(interval);
+        reject();
+      }
+
       const timeline = document.querySelector(`[aria-label="Home timeline"]`);
 
-      if(timeline){
-        console.log('IT WORKED')
+      if (timeline) {
         clearInterval(interval);
         resolve();
       }
-    }, 50);
+    }, 10);
+  });
+}
+
+async function waitForCheckmark() {
+  let count = 0;
+  return new Promise((resolve, reject) => {
+    const interval = setInterval(() => {
+      if (++count > 500) {
+        clearInterval(interval);
+        reject();
+      }
+
+      const timeline = getCheckmark();
+
+      if (timeline) {
+        clearInterval(interval);
+        resolve();
+      }
+    }, 10);
+  });
+}
+
+async function waitForHoverCard() {
+  return new Promise((resolve) => {
+    const interval = setInterval(() => {
+      const hoverCard = document.querySelector(`[data-testId="HoverCard"]`);
+      if (hoverCard) {
+        clearInterval(interval);
+        resolve(hoverCard);
+      }
+    }, 10);
   });
 }
 
 go();
+
+(() => {
+  let oldPushState = history.pushState;
+  history.pushState = function pushState() {
+    let ret = oldPushState.apply(this, arguments);
+    window.dispatchEvent(new Event('pushstate'));
+    window.dispatchEvent(new Event('locationchange'));
+    return ret;
+  };
+
+  let oldReplaceState = history.replaceState;
+  history.replaceState = function replaceState() {
+    let ret = oldReplaceState.apply(this, arguments);
+    window.dispatchEvent(new Event('replacestate'));
+    window.dispatchEvent(new Event('locationchange'));
+    return ret;
+  };
+
+  window.addEventListener('popstate', () => {
+    window.dispatchEvent(new Event('locationchange'));
+  });
+})();
+
+['pushstate', 'replacestate', 'locationchange'].forEach((eventName) =>
+  window.addEventListener(eventName, () => {
+    console.log('🔵 EVENT', eventName);
+    go();
+  })
+);
